@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>KOREAN 3B</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<style>
+:root{
+  --bg:#000; --fg:#fff; --dim:#8a8a8a; --line:#242424; --card:#0d0d0d;
+  --accent:#fff; --good:#fff; --bad:#5a5a5a;
+  --fs-huge:clamp(38px,11vw,64px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--fg);overscroll-behavior:none}
+body{
+  font-family:'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  -webkit-font-smoothing:antialiased;
+  min-height:100dvh; position:relative; letter-spacing:.01em;
+}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.mono{font-variant-numeric:tabular-nums}
+.up{text-transform:uppercase;letter-spacing:.14em}
+
+/* ---------- APP SHELL ---------- */
+#app{min-height:100dvh;padding-bottom:78px}
+.view{display:none;animation:fade .25s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* header */
+.top{
+  position:sticky;top:0;z-index:40;background:var(--bg);
+  border-bottom:1px solid var(--line);
+  padding:14px 18px calc(14px) 18px;
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding-top:calc(14px + env(safe-area-inset-top));
+}
+.top h1{font-size:19px;font-weight:800;letter-spacing:.16em}
+.top .sub{font-size:10px;color:var(--dim);letter-spacing:.2em}
+.langbtn{font-size:11px;color:var(--dim);border:1px solid var(--line);padding:5px 9px;letter-spacing:.1em}
+.langbtn:active{background:#141414}
+
+/* generic sections */
+.pad{padding:18px}
+.eyebrow{font-size:10px;color:var(--dim);letter-spacing:.24em;margin-bottom:8px}
+.section-title{font-size:12px;letter-spacing:.2em;color:var(--dim);margin:22px 18px 10px}
+
+/* lesson chips */
+.chiprow{display:flex;gap:8px;overflow-x:auto;padding:12px 18px;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.chiprow::-webkit-scrollbar{display:none}
+.chip{
+  flex:0 0 auto;font-size:12px;padding:8px 13px;border:1px solid var(--line);
+  color:var(--dim);letter-spacing:.08em;white-space:nowrap;background:var(--card)
+}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
+
+/* ---------- WORDS (flashcards) ---------- */
+.counter{font-size:11px;color:var(--dim);letter-spacing:.18em;text-align:center;padding:16px 0 4px}
+.card-wrap{padding:10px 18px 4px}
+.flash{
+  position:relative;width:100%;min-height:280px;border:1px solid var(--line);
+  background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:34px 22px;user-select:none
+}
+.flash .ko{font-size:var(--fs-huge);font-weight:800;line-height:1.04;word-break:keep-all}
+.flash .tr{font-size:20px;color:var(--fg);margin-top:6px}
+.flash .les{position:absolute;top:14px;left:16px;font-size:10px;color:var(--dim);letter-spacing:.2em}
+.flash .tap{position:absolute;bottom:14px;font-size:9px;color:var(--dim);letter-spacing:.2em}
+.wbtns{display:flex;gap:10px;padding:14px 18px}
+.wbtn{flex:1;border:1px solid var(--line);padding:16px;font-size:12px;letter-spacing:.14em;text-align:center;background:var(--card)}
+.wbtn.no{color:var(--dim)}
+.wbtn:active{background:#161616}
+.navrow{display:flex;justify-content:space-between;padding:2px 18px 18px;gap:10px}
+.navrow button{font-size:11px;color:var(--dim);letter-spacing:.16em;padding:8px 4px}
+
+/* ---------- GRAMMAR ---------- */
+.glist{padding:6px 18px 18px}
+.gitem{border-bottom:1px solid var(--line);padding:16px 2px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.gitem .gt{font-size:16px;font-weight:700;word-break:keep-all}
+.gitem .gl{font-size:10px;color:var(--dim);letter-spacing:.14em;flex:0 0 auto}
+.g-detail{padding:0 18px 30px}
+.g-detail h2{font-size:24px;font-weight:800;margin:14px 0 4px;word-break:keep-all}
+.g-detail .lesbadge{font-size:10px;color:var(--dim);letter-spacing:.2em;margin-bottom:16px}
+.explain-box{border:1px solid var(--line);background:var(--card);padding:16px;font-size:15px;line-height:1.6;color:#e2e2e2}
+.ex-label{font-size:10px;color:var(--dim);letter-spacing:.22em;margin:22px 0 10px}
+.dlg{border-left:2px solid var(--fg);padding:2px 0 2px 14px;margin-bottom:18px}
+.dlg .line{margin-bottom:9px}
+.dlg .spk{font-size:11px;color:var(--dim);letter-spacing:.1em;margin-right:6px}
+.dlg .lko{font-size:16px;line-height:1.45;word-break:keep-all}
+.dlg .ltr{font-size:12.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.backbtn{font-size:11px;color:var(--dim);letter-spacing:.18em;padding:14px 0 6px}
+
+/* ---------- LISTENING ---------- */
+.llist{padding:6px 18px 18px}
+.litem{border:1px solid var(--line);background:var(--card);padding:16px;margin-bottom:12px}
+.litem .lt{font-size:16px;font-weight:700;word-break:keep-all}
+.litem .lmeta{font-size:10px;color:var(--dim);letter-spacing:.14em;margin-top:5px}
+.audio-line{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+.playbtn{flex:0 0 auto;width:38px;height:38px;border:1px solid var(--fg);display:flex;align-items:center;justify-content:center;font-size:13px}
+.playbtn.playing{background:var(--fg);color:var(--bg)}
+.audio-line .who{font-size:10px;color:var(--dim);letter-spacing:.1em;margin-bottom:3px}
+.audio-line .txt{font-size:15px;line-height:1.45;word-break:keep-all}
+.audio-line .txt .tr{display:none;font-size:12.5px;color:var(--dim);margin-top:3px}
+.audio-line.show .txt .tr{display:block}
+.toolbar{display:flex;gap:9px;margin:6px 0 14px}
+.tool{flex:1;border:1px solid var(--line);padding:12px;font-size:11px;letter-spacing:.12em;text-align:center;background:var(--card)}
+.tool:active{background:#161616}
+.tool.on{background:var(--fg);color:var(--bg)}
+
+/* ---------- QUESTIONS ---------- */
+.q-block{border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
+.q-type{font-size:9px;color:var(--dim);letter-spacing:.2em;margin-bottom:6px}
+.q-text{font-size:15px;font-weight:600;margin-bottom:12px;word-break:keep-all;line-height:1.4}
+.opt{border:1px solid var(--line);background:var(--card);padding:13px 14px;margin-bottom:8px;font-size:14px;line-height:1.4;word-break:keep-all;display:flex;gap:9px;align-items:flex-start}
+.opt .num{font-size:11px;color:var(--dim);flex:0 0 auto;margin-top:2px}
+.opt.correct{border-color:var(--fg);background:var(--fg);color:var(--bg)}
+.opt.correct .num{color:var(--bg)}
+.opt.wrong{border-color:var(--bad);opacity:.5}
+.opt.dim{opacity:.4}
+
+/* ---------- READING ---------- */
+.rlist{padding:6px 18px 18px}
+.ritem{border:1px solid var(--line);background:var(--card);padding:18px;margin-bottom:12px}
+.ritem .rt{font-size:18px;font-weight:800;word-break:keep-all;line-height:1.2}
+.ritem .rtr{font-size:12px;color:var(--dim);margin-top:5px}
+.ritem .rmeta{font-size:10px;color:var(--dim);letter-spacing:.14em;margin-top:9px}
+.r-detail{padding:2px 18px 30px}
+.r-detail h2{font-size:23px;font-weight:800;margin:6px 0 3px;word-break:keep-all;line-height:1.15}
+.r-detail .rtr2{font-size:13px;color:var(--dim);margin-bottom:16px}
+.r-body{font-size:17px;line-height:1.9;word-break:keep-all}
+.r-body .w{border-bottom:1px dotted #3a3a3a;padding-bottom:1px}
+.r-body .w:active{background:var(--fg);color:var(--bg)}
+.hint{font-size:10px;color:var(--dim);letter-spacing:.14em;margin:10px 0 18px}
+
+/* ---------- WRITING ---------- */
+.wlvls{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:14px 18px}
+.wlvl{border:1px solid var(--line);background:var(--card);padding:16px 8px;text-align:center}
+.wlvl .n{font-size:20px;font-weight:800}
+.wlvl .lb{font-size:9px;color:var(--dim);letter-spacing:.1em;margin-top:3px}
+.wlvl.rnd{grid-column:1/-1;padding:16px}
+.wlvl.rnd .n{font-size:15px;letter-spacing:.12em}
+.w-task{padding:18px}
+.w-progress{font-size:11px;color:var(--dim);letter-spacing:.16em;text-align:center;margin-bottom:20px}
+.w-sentence{font-size:21px;line-height:1.7;word-break:keep-all;margin-bottom:26px;min-height:90px}
+.w-blank{border-bottom:2px solid var(--fg);padding:0 26px;margin:0 3px}
+.w-done{text-align:center;padding:60px 18px}
+.w-done .big{font-size:30px;font-weight:800;margin-bottom:20px}
+
+/* ---------- DICTIONARY ---------- */
+.dlist{padding:6px 0 18px}
+.dhead{padding:14px 18px 4px;font-size:10px;color:var(--dim);letter-spacing:.16em}
+.drow{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.drow .inner{background:var(--bg);padding:16px 18px;transition:transform .18s ease;position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:14px}
+.drow .ko{font-size:17px;font-weight:700;word-break:keep-all}
+.drow .tr{font-size:13px;color:var(--dim);margin-top:2px}
+.drow .src{font-size:9px;color:#5a5a5a;letter-spacing:.12em;flex:0 0 auto}
+.drow .del{position:absolute;right:0;top:0;bottom:0;width:110px;background:var(--fg);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:.14em;z-index:1}
+.empty{padding:60px 30px;text-align:center;color:var(--dim);font-size:13px;line-height:1.7}
+
+/* ---------- INFO ---------- */
+.info{padding:34px 24px}
+.info h2{font-size:34px;font-weight:800;margin-bottom:20px}
+.info p{font-size:15px;line-height:1.8;color:#dcdcdc;white-space:pre-line;margin-bottom:26px}
+.iglink{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--fg);padding:15px 20px;font-size:14px;letter-spacing:.1em;font-weight:700}
+.iglink:active{background:var(--fg);color:var(--bg)}
+.devbox{margin-top:40px;border-top:1px solid var(--line);padding-top:20px}
+.devtoggle{font-size:11px;color:var(--dim);letter-spacing:.14em;padding:8px 0}
+.devpanel{margin-top:14px}
+.devnote{font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:14px}
+.devinput{width:100%;background:var(--card);border:1px solid var(--line);color:var(--fg);padding:13px;font-size:13px;font-family:inherit;margin-bottom:10px}
+.devinput::placeholder{color:#555}
+.devrow{display:flex;gap:10px}
+.devinput.half{width:50%}
+.devgen{margin-top:6px}
+.devprog{font-size:12px;color:var(--dim);margin-top:14px;line-height:1.5;word-break:break-word;min-height:18px}
+
+/* ---------- LANG OVERLAY ---------- */
+#langOverlay{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:30px}
+#langOverlay .brand{font-size:44px;font-weight:800;letter-spacing:.08em;margin-bottom:6px}
+#langOverlay .brandsub{font-size:11px;color:var(--dim);letter-spacing:.3em;margin-bottom:40px}
+#langOverlay .ltitle{font-size:11px;color:var(--dim);letter-spacing:.22em;margin-bottom:8px}
+.lopt{width:100%;max-width:320px;border:1px solid var(--line);background:var(--card);padding:20px;display:flex;align-items:center;gap:16px;font-size:17px;letter-spacing:.04em}
+.lopt:active{background:var(--fg);color:var(--bg)}
+.lopt .flag{font-size:26px}
+
+/* ---------- TAB BAR ---------- */
+#tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--bg);
+  border-top:1px solid var(--line);display:flex;
+  padding-bottom:env(safe-area-inset-bottom)
+}
+.tabbtn{flex:1;padding:11px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--dim)}
+.tabbtn .ic{font-size:15px;font-weight:800;letter-spacing:.02em}
+.tabbtn .lb{font-size:8px;letter-spacing:.08em}
+.tabbtn.on{color:var(--fg)}
+.tabbtn.on .ic{text-decoration:underline;text-underline-offset:3px}
+
+.pophint{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;z-index:60;background:var(--fg);color:var(--bg);font-size:12px;padding:11px 16px;max-width:80%;text-align:center;line-height:1.4;animation:fade .2s}
+</style>
+</head>
+<body>
+<div id="app"><!-- filled by JS --></div>
+<div id="tabbar"></div>
+<div id="langOverlay" style="display:none"></div>
+<script src="data.js"></script>
+<script src="audiogen.js"></script>
+<script src="app.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>듣기 오디오 생성기 — Korean 3B</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system,"Helvetica Neue",Arial,sans-serif; background:#0d0d0d; color:#eee; padding:32px 20px 80px; max-width:720px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:800; margin-bottom:6px; }
+  .sub { color:#888; font-size:13px; margin-bottom:28px; line-height:1.6; }
+  label { display:block; font-size:12px; color:#aaa; margin-bottom:6px; margin-top:18px; text-transform:uppercase; letter-spacing:.05em; }
+  input[type="password"], select { width:100%; padding:12px 14px; background:#1a1a1a; border:1px solid #333; color:#fff; border-radius:6px; font-size:14px; }
+  .row { display:flex; gap:12px; } .row > div { flex:1; }
+  button { margin-top:26px; width:100%; padding:15px; background:#fff; color:#000; border:none; border-radius:6px; font-size:14px; font-weight:700; cursor:pointer; }
+  button:disabled { background:#444; color:#888; cursor:not-allowed; }
+  #log { margin-top:24px; background:#111; border:1px solid #262626; border-radius:6px; padding:14px; font-size:12px; line-height:1.8; max-height:320px; overflow-y:auto; font-family:ui-monospace,monospace; white-space:pre-wrap; }
+  .ok { color:#3ddc84; } .err { color:#ff5555; } .info { color:#888; }
+  #progressBar { height:6px; background:#222; border-radius:3px; margin-top:16px; overflow:hidden; }
+  #progressFill { height:100%; background:#fff; width:0%; transition:width .2s; }
+  .note { background:#1a1500; border:1px solid #3a2f00; color:#d4c04a; padding:12px 14px; border-radius:6px; font-size:12px; margin-top:20px; line-height:1.6; }
+  .steps { background:#0f1420; border:1px solid #1e2a44; color:#9fb4d8; padding:14px 16px; border-radius:6px; font-size:12.5px; line-height:1.7; margin-top:20px; }
+  .steps b { color:#cfe0ff; }
+</style>
+</head>
+<body>
+<h1>듣기 오디오 생성기 — Korean 3B</h1>
+<p class="sub">Генерирует озвучку всех диалогов 듣기 (уроки 10–18) через ElevenLabs прямо в браузере. Ключ отправляется только в официальный API ElevenLabs. Работает офлайн (ZIP собирается локально).</p>
+
+<label>ElevenLabs API Key</label>
+<input type="password" id="apiKey" placeholder="sk_...">
+
+<div class="row">
+  <div><label>Голос — 남자 (мужчина)</label><select id="maleVoice"></select></div>
+  <div><label>Голос — 여자 (женщина)</label><select id="femaleVoice"></select></div>
+</div>
+
+<button id="loadVoicesBtn">1. Загрузить список голосов</button>
+<button id="generateBtn" disabled>2. Сгенерировать все аудио и скачать ZIP</button>
+
+<div id="progressBar"><div id="progressFill"></div></div>
+<div id="log"></div>
+
+<div class="steps">
+<b>После скачивания:</b><br>
+1. Распакуй <b>audio.zip</b> — внутри папка <b>audio/</b> с файлами вида <b>d1_0_F.mp3</b>.<br>
+2. Положи папку <b>audio/</b> в репозиторий рядом с <b>index.html</b> (замени старую).<br>
+3. Commit + push. Через минуту звук заработает везде, включая iPhone.
+</div>
+
+<div class="note">Бесплатный лимит ElevenLabs — 10 000 символов/месяц. Этот набор из 48 реплик ≈ 2243 символов — с запасом.</div>
+
+<script>
+// ---- self-contained ZIP encoder (store, no compression) ----
+const ZipStore = (()=>{
+  // CRC32
+  const crcTable = (()=>{
+    let c, table=[];
+    for(let n=0;n<256;n++){ c=n; for(let k=0;k<8;k++){ c = (c&1)?(0xEDB88320^(c>>>1)):(c>>>1); } table[n]=c>>>0; }
+    return table;
+  })();
+  function crc32(bytes){
+    let c=0xFFFFFFFF;
+    for(let i=0;i<bytes.length;i++){ c = crcTable[(c^bytes[i])&0xFF]^(c>>>8); }
+    return (c^0xFFFFFFFF)>>>0;
+  }
+  function strBytes(s){ return new TextEncoder().encode(s); }
+  function u16(n){ return [n&0xFF,(n>>>8)&0xFF]; }
+  function u32(n){ return [n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF]; }
+
+  // build zip from [{name, data:Uint8Array}]
+  function build(files){
+    const chunks=[]; const central=[]; let offset=0;
+    for(const f of files){
+      const nameB = strBytes(f.name);
+      const crc = crc32(f.data);
+      const size = f.data.length;
+      // local file header
+      const local = [].concat(
+        u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(size), u32(size), u16(nameB.length), u16(0)
+      );
+      const localHeader = new Uint8Array(local);
+      chunks.push(localHeader, nameB, f.data);
+      const localLen = localHeader.length + nameB.length + f.data.length;
+      // central directory record
+      const cen = [].concat(
+        u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(size), u32(size), u16(nameB.length), u16(0), u16(0),
+        u16(0), u16(0), u32(0), u32(offset)
+      );
+      central.push(new Uint8Array(cen), nameB);
+      offset += localLen;
+    }
+    let centralSize=0; central.forEach(c=>centralSize+=c.length);
+    const centralOffset=offset;
+    const end = new Uint8Array([].concat(
+      u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+      u32(centralSize), u32(centralOffset), u16(0)
+    ));
+    const all=[...chunks, ...central, end];
+    let total=0; all.forEach(a=>total+=a.length);
+    const out=new Uint8Array(total); let p=0;
+    all.forEach(a=>{ out.set(a,p); p+=a.length; });
+    return out;
+  }
+  return { build };
+})();
+
+// ---- dialogues (Korean 3B). spk F=여자, M=남자 ----
+const DIALOGUES = [{"id": "d1", "title": "몸이 안 좋아요", "lines": [{"spk": "F", "ko": "무슨 일 있어? 많이 피곤해 보여."}, {"spk": "M", "ko": "몸이 좀 안 좋네. 자꾸 식은땀이 나고 좀 어지러워."}, {"spk": "F", "ko": "어디 아픈 거 아니야? 여기 좀 앉지 그래?"}, {"spk": "M", "ko": "알았어. 어제 발표 준비하느라고 못 자서 그런 것 같아."}, {"spk": "F", "ko": "집에 가서 좀 쉬면 괜찮아질 거야. 발표 준비는 다 된 거지?"}, {"spk": "M", "ko": "아니. 발표 준비 다 하려면 아직 멀었어."}]}, {"id": "d2", "title": "대학생의 스트레스", "lines": [{"spk": "M", "ko": "최근 대학생 천 명에게 무엇 때문에 스트레스를 받는지 물었습니다."}, {"spk": "M", "ko": "이 질문에 반 이상의 학생이 학교 성적이나 수업 때문에 스트레스를 받는다고 대답했습니다."}, {"spk": "M", "ko": "그리고 경제적인 문제로 스트레스가 쌓인다고 대답한 학생이 삼십 퍼센트였습니다."}, {"spk": "M", "ko": "전문가들은 이럴 때에는 괜찮은 척하지 말고 주변에 도움을 요청하지 않으면 안 된다고 조언했습니다."}]}, {"id": "d3", "title": "생일 선물", "lines": [{"spk": "M", "ko": "그거 누구 선물이에요?"}, {"spk": "F", "ko": "오늘이 대한 씨 생일이잖아요. 그래서 생일 선물을 준비했어요."}, {"spk": "M", "ko": "아, 그러네요. 얼마 전에 기억하고 있었는데 깜빡 잊어버렸어요."}, {"spk": "F", "ko": "대한 씨하고 사귄 지도 꽤 오래됐지요? 두 사람이 손을 잡고 걸어가는 모습을 보면 정말 부러워요."}, {"spk": "F", "ko": "결혼은 언제 할 생각이에요?"}, {"spk": "M", "ko": "결혼하려면 아직 멀었어요."}]}, {"id": "d4", "title": "주말에도 일했더니", "lines": [{"spk": "M", "ko": "요즘 주말에도 쉬지 못하고 일했더니 너무 지치네. 힘이 없으니까 우울하고 일할 때 집중도 안 돼."}, {"spk": "F", "ko": "많이 힘들구나. 그럴 땐 쉬지 않으면 안 돼. 주말에 같이 어디 가까운 곳이라도 다녀올까?"}, {"spk": "M", "ko": "좋아. 공기 좋고 평화로운 곳에 가서 좀 쉬었다가 오면 마음에 여유가 생기고 기운도 날 것 같아."}, {"spk": "F", "ko": "내가 작년에 여행 갔던 곳이 있는데 아주 괜찮았어. 그곳만큼 지금 너에게 딱 맞는 곳도 없을 거야."}]}, {"id": "d5", "title": "지금 만나는 사람", "lines": [{"spk": "F", "ko": "지금 만나고 있는 사람이 어떤가요? 여전히 그 사람을 보면 처음 만났던 날처럼 가슴이 두근거리거나 얼굴이 빨개지나요?"}, {"spk": "M", "ko": "아마 아닐 겁니다. 처음에는 서로에게 매력을 느꼈지만 지금은 마음이 변했다고 생각할 수도 있어요."}, {"spk": "F", "ko": "이럴 때 사람들은 사랑이 식었다고 생각합니다. 하지만 사랑했던 마음이 변한 것이 아닙니다."}, {"spk": "F", "ko": "오래 사귄 사람과 같이 있으면 마음이 편안해지는데 이것도 사랑의 또 다른 모습입니다."}]}, {"id": "d6", "title": "시골 생활", "lines": [{"spk": "F", "ko": "요즘 복잡한 도시를 떠나 여유 있는 시골에서 살고 싶어 하는 사람들이 많아지고 있는데요. 오늘은 농촌 생활 지원 센터 김 과장님을 모시고 이야기를 나눠 보겠습니다."}, {"spk": "F", "ko": "과장님, 어떻게 해야 시골 생활을 잘할 수 있을까요?"}, {"spk": "M", "ko": "시골에서 행복하게 살기 위해서는 미리 준비하지 않으면 안 됩니다. 우선 자신이 지낼 집이 나의 생활과 잘 맞는지 꼼꼼하게 확인해야 합니다."}, {"spk": "M", "ko": "다음으로 무엇을 하면서 지낼지 생각해 봐야 합니다. 요즘은 시골 생활을 잘할 수 있게 도와주는 지원 센터도 있으니까 관심 있는 분들은 센터에 방문해 보세요."}]}, {"id": "d7", "title": "헤어진 친구", "lines": [{"spk": "F", "ko": "여보세요. 진우야, 어디야? 어제 전화도 안 받고 연락도 안 돼서 걱정했어."}, {"spk": "M", "ko": "미안해. 혼자 있고 싶었어. 여자 친구하고 헤어지고 나서 괜찮은 척했는데 사실은 많이 힘들어."}, {"spk": "F", "ko": "그랬구나. 그런데 그렇다고 계속 집에만 있으면 안 돼. 이럴 때일수록 밖에 나와서 활기차게 움직이고 사람들을 만나는 게 좋아."}, {"spk": "M", "ko": "나도 알고 있어. 그런데 나갈 힘이 없어. 기운이 안 나."}, {"spk": "F", "ko": "그래도 나가서 운동을 좀 해 봐. 운동을 하고 나면 기분이 상쾌해질 거야."}]}, {"id": "d8", "title": "인기 있는 아르바이트", "lines": [{"spk": "F", "ko": "아르바이트 사이트 '알바세상'에서 일 년 동안 사람들이 가장 많이 지원한 아르바이트에 대해 발표했습니다."}, {"spk": "F", "ko": "사람들이 가장 많이 지원한 곳은 편의점이었습니다. 편의점 아르바이트는 나이나 성별과 상관없이 누구든지 지원할 수 있기 때문에 인기가 많은 것으로 보입니다."}, {"spk": "F", "ko": "이 위는 작년에 일 위였던 카페였습니다. 근무 환경이 좋은 카페 아르바이트의 인기가 여전히 높았습니다."}, {"spk": "F", "ko": "삼 위는 피시방이었습니다. 이 밖에도 배달, 학원 등의 아르바이트가 십 위 안에 들었습니다."}]}, {"id": "d9", "title": "연극 인터뷰", "lines": [{"spk": "F", "ko": "다음 주 수요일부터 서울극장에서 연극 '사이좋은 형제'의 공연이 열립니다. 이번 연극에서 동생 역을 맡은 배우 이민혁 씨를 만나 보겠습니다. 이민혁 씨, 안녕하세요?"}, {"spk": "M", "ko": "안녕하세요. 배우 이민혁입니다."}, {"spk": "F", "ko": "민혁 씨는 어렸을 때 옛날이야기를 좋아하셨어요?"}, {"spk": "M", "ko": "네. 제가 어렸을 때 할머니께서 옛날이야기를 많이 들려주셨거든요. '사이좋은 형제'는 그중에서도 제가 무척 좋아했던 이야기입니다."}, {"spk": "M", "ko": "이번 공연에서 이 이야기를 직접 연기할 수 있게 돼서 얼마나 기쁜지 모릅니다. 재미있는 공연을 찾고 계신다면 저희 연극을 꼭 보러 오세요."}]}, {"id": "d10", "title": "지구의 날", "lines": [{"spk": "F", "ko": "어, 왜 갑자기 불이 꺼졌지?"}, {"spk": "M", "ko": "오늘이 지구의 날이라니까. 아까 선생님이 말씀해 주셨잖아."}, {"spk": "F", "ko": "지구의 날? 그런데 이렇게 십 분 동안 불을 끈다고 뭐가 달라질까?"}, {"spk": "M", "ko": "이렇게 하면 나무 팔천 그루를 심는 것만큼 에너지 절약 효과가 있대."}, {"spk": "F", "ko": "그렇구나. 그런데 지구의 날에 내가 할 수 있는 일이 있을까?"}, {"spk": "M", "ko": "물론이지. 누구든지 지구를 위한 일을 할 수 있어. 자동차를 타는 대신에 대중교통을 이용하거나 종이컵 대신 계속 쓸 수 있는 컵을 사용하는 것도 다 지구를 위한 일이야."}]}];
+
+const apiKeyInput=document.getElementById('apiKey');
+const maleSelect=document.getElementById('maleVoice');
+const femaleSelect=document.getElementById('femaleVoice');
+const loadVoicesBtn=document.getElementById('loadVoicesBtn');
+const generateBtn=document.getElementById('generateBtn');
+const logEl=document.getElementById('log');
+const progressFill=document.getElementById('progressFill');
+
+function log(msg,cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=msg; logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight; }
+
+async function loadVoices(){
+  const key=apiKeyInput.value.trim();
+  if(!key){ log('Введите API-ключ.','err'); return; }
+  loadVoicesBtn.disabled=true;
+  try{
+    log('Загружаю список голосов…','info');
+    const res=await fetch('https://api.elevenlabs.io/v1/voices',{headers:{'xi-api-key':key}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    maleSelect.innerHTML=''; femaleSelect.innerHTML='';
+    data.voices.forEach(v=>{
+      const o=document.createElement('option');
+      o.value=v.voice_id;
+      o.textContent=v.name+(v.labels&&v.labels.gender?' ('+v.labels.gender+')':'');
+      maleSelect.appendChild(o); femaleSelect.appendChild(o.cloneNode(true));
+    });
+    const mg=data.voices.find(v=>v.labels&&v.labels.gender==='male');
+    const fg=data.voices.find(v=>v.labels&&v.labels.gender==='female');
+    if(mg)maleSelect.value=mg.voice_id; if(fg)femaleSelect.value=fg.voice_id;
+    log('Голосов загружено: '+data.voices.length+'. Выбери мужской и женский, затем «Сгенерировать».','ok');
+    generateBtn.disabled=false;
+  }catch(e){ log('Ошибка загрузки: '+e.message+'. Проверь ключ.','err'); }
+  finally{ loadVoicesBtn.disabled=false; }
+}
+
+async function ttsRequest(text,voiceId,apiKey){
+  const res=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voiceId,{
+    method:'POST',
+    headers:{'xi-api-key':apiKey,'Content-Type':'application/json','Accept':'audio/mpeg'},
+    body:JSON.stringify({text:text,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.5,similarity_boost:0.75}})
+  });
+  if(!res.ok){ let m='HTTP '+res.status; try{const j=await res.json(); m+=' '+(j.detail&&j.detail.message?j.detail.message:'');}catch(e){} throw new Error(m); }
+  const buf=await res.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+async function generateAll(){
+  const key=apiKeyInput.value.trim();
+  const maleVoice=maleSelect.value, femaleVoice=femaleSelect.value;
+  if(!key||!maleVoice||!femaleVoice){ log('Укажи ключ и оба голоса.','err'); return; }
+  generateBtn.disabled=true; loadVoicesBtn.disabled=true; logEl.innerHTML=''; progressFill.style.width='0%';
+  const files=[];
+  let total=0; DIALOGUES.forEach(d=>total+=d.lines.length); let done=0;
+  for(const d of DIALOGUES){
+    for(let i=0;i<d.lines.length;i++){
+      const line=d.lines[i];
+      const voiceId=line.spk==='M'?maleVoice:femaleVoice;
+      const filename='audio/'+d.id+'_'+i+'_'+line.spk+'.mp3';
+      try{
+        log('Генерирую: '+d.title+' — '+line.spk+' '+(i+1)+'/'+d.lines.length,'info');
+        const bytes=await ttsRequest(line.ko,voiceId,key);
+        files.push({name:filename,data:bytes});
+        log('OK: '+filename,'ok');
+      }catch(e){ log('Ошибка: '+filename+' — '+e.message,'err'); }
+      done++; progressFill.style.width=Math.round((done/total)*100)+'%';
+      await new Promise(r=>setTimeout(r,300));
+    }
+  }
+  log('Собираю ZIP…','info');
+  const zipBytes=ZipStore.build(files);
+  const blob=new Blob([zipBytes],{type:'application/zip'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='audio.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  log('Готово! Скачан audio.zip ('+files.length+' файлов). Распакуй и положи папку audio/ в репозиторий.','ok');
+  generateBtn.disabled=false; loadVoicesBtn.disabled=false;
+}
+
+loadVoicesBtn.addEventListener('click',loadVoices);
+generateBtn.addEventListener('click',generateAll);
+</script>
+</body>
+</html>
